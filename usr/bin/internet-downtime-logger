@@ -1,0 +1,529 @@
+#!/bin/bash
+
+# Internet Downtime Logger is a tool for logging internet downtime with optional email notifications.
+# Copyright (C) 2016 akidwithnoname
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>
+#
+# Internet Downtime Logger v2.3.2
+# By [null] aka akidwithnoname
+# Website: https://null-bin.blogspot.com/2016/02/internet-downtime-logger.html
+# Twitter: https://twitter.com/akidwithnoname
+# Email: akidwithnoname@gmail.com
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# CHECKS
+
+CONFIG_FILE="./.config/internet-downtime-logger/internet-downtime-logger.conf"
+
+USER=$(id -u)
+if [ "$USER" = "0" ]
+then
+    echo "please do not run Internet Downtime Logger as root!"
+    echo "exiting in 5 seconds"
+    sleep 5
+    exit 0
+fi
+cd
+if [ -e "$CONFIG_FILE" ]
+then
+    echo "using existing config file"
+else
+    echo "creating new config file"
+    mkdir "./.config/internet-downtime-logger"
+    cp -r "/usr/share/internet-downtime-logger/internet-downtime-logger.conf" "$CONFIG_FILE"
+    if [ -e "$CONFIG_FILE" ]
+    then
+        echo "config file created succesfully"
+        echo "starting internet-downtime-logger-config"
+        internet-downtime-logger-config
+    else
+        echo "unable to create config file, exiting"
+        exit 0
+    fi
+fi
+source "$CONFIG_FILE"
+if [ "$VERSION" = "2.3" ]
+then
+    echo "log file is compatible"
+else
+    echo "please upgrade config file to v2.3!"
+    echo "you may do this by deleting or renaming the existing config file located at "$CONFIG_FILE""
+    echo ""
+    echo "would you like to overwrite your existing config file with a blank v2.3 one now?"
+    echo "( 1 = Yes | 0 = No )"
+    read OVERWRITE_CONFIG
+    if [ "$OVERWRITE_CONFIG" = "1" ]
+    then
+        echo "overwriting config file"
+        cp -r "/usr/share/internet-downtime-logger/internet-downtime-logger.conf" "$CONFIG_FILE"
+        internet-downtime-logger-config
+    else
+        echo "will not overwrite existing config file, exiting."
+        exit 0
+    fi
+fi
+
+if [ "$INITIAL_SETUP" = "1" ]
+then
+    echo "starting internet-downtime-logger-config"
+    internet-downtime-logger-config
+fi
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# READ CONFIG FILE
+
+echo "reading config file"
+source "$CONFIG_FILE"
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# FUNCTIONS
+
+# GET DATES
+
+function get-dates {
+    TODAY_DATE=$(date +%m/%d/%Y)
+    YESTERDAY_DATE=$(date --date='-1 day' +%m/%d/%Y)
+    YESTERDAY_DATE_HUMAN=$(date --date='-1 day' +%x)
+    YESTERDAY_DAY_HUMAN=$(date --date='-1 day' +"$HUMAN_DAY_FORMAT")
+    PREVDAY_DATE=$(date --date='-2 day' +%m/%d/%Y)
+    THISMONTH_MONTH=$(date +%m)
+    THISMONTH_YEAR=$(date +%Y)
+    LASTMONTH_DATE=$(date --date='-1 month' +%m/%d/%Y)
+    LASTMONTH_MONTH=$(date --date='-1 month' +%m)
+    LASTMONTH_YEAR=$(date --date='-1 month' +%Y)
+    LASTMONTH_MONTH_HUMAN=$(date --date='-1 month' +"$HUMAN_MONTH_FORMAT")
+    PREVMONTH_MONTH=$(date --date='-2 month' +%m)
+    PREVMONTH_YEAR=$(date --date='-2 month' +%Y)
+}
+
+# INSTANT NOTIFICATION
+
+function instant-notification {
+    DATE_TIME_UNIX_EPOCH=$(date +%s)
+    DATE_TIME_HUMAN=$(date -d @"$DATE_TIME_UNIX_EPOCH" +"$HUMAN_DATE_FORMAT")
+    DOWNTIME_IN_SECONDS=$(echo "$DATE_TIME_UNIX_EPOCH" - "$DATE_TIME_LOST_UNIX_EPOCH"|bc)
+    DATE_TIME_LOST_DATE_TIME=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"%m/%d/%Y %T")
+    DATE_TIME_DATE_TIME=$(date -d @"$DATE_TIME_UNIX_EPOCH" +"%m/%d/%Y %T")
+    echo "$DATE_TIME_LOST_DATE_TIME $DATE_TIME_DATE_TIME $DOWNTIME_IN_SECONDS" >> "$HIDDEN_LOG"
+    DOWNTIME_HUMAN=$(printf '%dd:%dh:%dm:%ds\n' $(($DOWNTIME_IN_SECONDS/86400)) $(($DOWNTIME_IN_SECONDS%86400/3600)) $(($DOWNTIME_IN_SECONDS%3600/60)) $(($DOWNTIME_IN_SECONDS%60)))
+    echo "" >> "$LOG_SAVE_LOCATION"
+    echo "| Downtime: $DOWNTIME_HUMAN" >> "$LOG_SAVE_LOCATION"
+    echo "| Disconnected: $DATE_TIME_LOST_HUMAN" >> "$LOG_SAVE_LOCATION"
+    echo "| Reconnected:  $DATE_TIME_HUMAN" >> "$LOG_SAVE_LOCATION"
+    if [ "$NOTIFICATION" = "1" ]
+    then
+        EMAIL_CONTENTS=$(echo "Downtime: $DOWNTIME_HUMAN"
+                         echo ""
+                         echo "Disconnected: $DATE_TIME_LOST_HUMAN"
+                         echo "Reconnected:  $DATE_TIME_HUMAN"
+                         echo " "
+                        )
+        EMAIL_COMMAND=$(echo "mailx -v -s '"$EMAIL_SUBJECT"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL")
+        echo "$EMAIL_CONTENTS" | eval $EMAIL_COMMAND
+    else
+        if [ "$NOTIFICATION" = "2" ]
+        then
+        EMAIL_CONTENTS=$(echo "Downtime: $DOWNTIME_HUMAN"
+                         echo ""
+                         echo "Disconnected: $DATE_TIME_LOST_HUMAN"
+                         echo "Reconnected:  $DATE_TIME_HUMAN"
+                         echo " "
+                        )
+            EMAIL_COMMAND=$(echo "mailx -v -s '"$EMAIL_SUBJECT"' -a '"$LOG_SAVE_LOCATION"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL")
+            echo "$EMAIL_CONTENTS" | eval $EMAIL_COMMAND
+        else
+            echo "instant email notification not enabled"
+        fi
+    fi
+}
+
+# MONTHLY TOTAL
+
+function monthly-total-calc {
+    get-dates
+    DATES=$(grep "$LASTMONTH_MONTH/../$LASTMONTH_YEAR..........$LASTMONTH_MONTH" "$HIDDEN_LOG")
+    echo "$DATES" > "/tmp/.internet_downtime_logger_dates.txt"
+    SECONDS=$(cut -d " " -f 5- "/tmp/.internet_downtime_logger_dates.txt" | awk '{ SUM += $1} END { print SUM }')
+    if grep "$PREVMONTH_MONTH/../$PREVMONTH_YEAR..........$LASTMONTH_MONTH" "$HIDDEN_LOG"
+    then
+        DATE_START_START=$(grep "$PREVMONTH_MONTH/../$PREVMONTH_YEAR..........$LASTMONTH_MONTH" "$HIDDEN_LOG")
+        DATE_START_START2=$(echo "${DATE_START_START:20:19}")
+        DATE_START_CALC=$(echo "$(date --date="$DATE_START_START2" +%s) - $(date --date="$LASTMONTH_MONTH/01/$LASTMONTH_YEAR 00:00:00" +%s)"|bc)
+    else
+        DATE_START_CALC="0"
+    fi
+    if grep "$LASTMONTH_MONTH/../$LASTMONTH_YEAR..........$THISMONTH_MONTH" "$HIDDEN_LOG"
+    then
+        DATE_END_START=$(grep "$LASTMONTH_MONTH/../$LASTMONTH_YEAR..........$THISMONTH_MONTH" "$HIDDEN_LOG")
+        DATE_END_START2=$(echo "${DATE_END_START:0:19}")
+        DATE_END_CALC=$(echo "$(date --date="$THISMONTH_MONTH/01/$THISMONTH_YEAR 00:00:00" +%s) - $(date --date="$DATE_END_START2" +%s)"|bc)
+    else
+        DATE_END_CALC="0"
+    fi
+    if [ -e "/tmp/.internet down.txt" ]
+    then
+        DATE_TIME_DOWN_WAS=$(cat "/tmp/.internet down.txt")
+        if grep "$LASTMONTH_MONTH/../$LASTMONTH_YEAR" "/tmp/.internet down.txt"
+        then
+            DATE_DOWN_CALC=$(echo "$(date --date="$THISMONTH_MONTH/01/$THISMONTH_YEAR 00:00:00" +%s) - $(date --date="$DATE_TIME_DOWN_WAS" +%s)"|bc)
+        else
+            DATE_DOWN_CALC=$(echo "$(date --date="$THISMONTH_MONTH/01/$THISMONTH_YEAR 00:00:00" +%s) - $(date --date="$LASTMONTH_MONTH/01/$LASTMONTH_YEAR 00:00:00" +%s)"|bc)
+        fi
+        if grep "$TODAY_DATE" "/tmp/.internet down.txt"
+        then
+            DATE_DOWN_CALC="0"
+        fi
+    else
+        DATE_DOWN_CALC="0"
+    fi
+    SECONDS_CALC=$(echo "$SECONDS + $DATE_START_CALC + $DATE_END_CALC + $DATE_DOWN_CALC"|bc) 
+    TIME=$(printf '%dd:%dh:%dm:%ds\n' $(($SECONDS_CALC/86400)) $(($SECONDS_CALC%86400/3600)) $(($SECONDS_CALC%3600/60)) $(($SECONDS_CALC%60)))
+}
+
+function monthly-total-log {
+    echo "" >> "$LOG_SAVE_LOCATION"
+    echo "[Monthly] Total internet downtime for $LASTMONTH_MONTH_HUMAN = $TIME" >> "$LOG_SAVE_LOCATION"
+    echo "ml$LASTMONTH_MONTH//$LASTMONTH_YEAR" >> "$HIDDEN_LOG"
+}
+
+
+function monthly-total-email {
+    if [ "$NOTIFICATION_TOTAL_MONTHLY" = "1" ]
+    then
+        EMAIL_CONTENTS_TOTAL=$(echo "Total internet downtime for $LASTMONTH_MONTH_HUMAN" 
+                               echo ""
+                               echo "$TIME"
+                               echo " "
+                              )
+        EMAIL_COMMAND_TOTAL=$(echo "mailx -v -s '"$EMAIL_SUBJECT_MONTHLY"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL_MONTHLY")
+        echo "$EMAIL_CONTENTS_TOTAL" | eval $EMAIL_COMMAND_TOTAL
+        monthly-total-email-log
+    else
+        if [ "$NOTIFICATION_TOTAL_MONTHLY" = "2" ]
+        then
+        EMAIL_CONTENTS_TOTAL=$(echo "Total internet downtime for $LASTMONTH_MONTH_HUMAN" 
+                               echo ""
+                               echo "$TIME"
+                               echo " "
+                              )
+            EMAIL_COMMAND_TOTAL=$(echo "mailx -v -s '"$EMAIL_SUBJECT_MONTHLY"' -a '"$LOG_SAVE_LOCATION"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL_MONTHLY")
+            echo "$EMAIL_CONTENTS_TOTAL" | eval $EMAIL_COMMAND_TOTAL
+            monthly-total-email-log
+        else
+            echo "monthly email notification not enabled"
+        fi
+    fi
+}
+
+function monthly-total-email-log {
+    echo "mn$LASTMONTH_MONTH//$LASTMONTH_YEAR" >> "$HIDDEN_LOG"
+}
+
+# DAILY TOTAL
+
+function daily-total-calc {
+    get-dates
+    DATES2=$(grep "$YESTERDAY_DATE..........$YESTERDAY_DATE" "$HIDDEN_LOG")
+    echo "$DATES2" > "/tmp/.internet_downtime_logger_dates2.txt"
+    SECONDS2=$(cut -d " " -f 5- "/tmp/.internet_downtime_logger_dates2.txt" | awk '{ SUM += $1} END { print SUM }')
+    if grep "$YESTERDAY_DATE" "$HIDDEN_LOG" | grep "$PREVDAY_DATE"
+    then
+        DATE2_START_START=$(grep "$YESTERDAY_DATE" "$HIDDEN_LOG" | grep "$PREVDAY_DATE")
+        DATE2_START_START2=$(echo "${DATE2_START_START:20:19}")
+        DATE2_START_CALC=$(echo "$(date --date="$DATE2_START_START2" +%s) - $(date --date="$YESTERDAY_DATE 00:00:00" +%s)"|bc)
+    else
+        DATE2_START_CALC="0"
+    fi
+    if grep "$YESTERDAY_DATE" "$HIDDEN_LOG" | grep "$TODAY_DATE"
+    then
+        DATE2_END_START=$(grep "$YESTERDAY_DATE" "$HIDDEN_LOG" | grep "$TODAY_DATE")
+        DATE2_END_START2=$(echo "${DATE2_END_START:0:19}")
+        DATE2_END_CALC=$(echo "$(date --date="$TODAY_DATE 00:00:00" +%s) - $(date --date="$DATE2_END_START2" +%s)"|bc)
+    else
+        DATE2_END_CALC="0"
+    fi
+    if [ -e "/tmp/.internet down.txt" ]
+    then
+        DATE2_TIME_DOWN_WAS=$(cat "/tmp/.internet down.txt")
+        if grep "$YESTERDAY_DATE" "/tmp/.internet down.txt"
+        then
+            DATE2_DOWN_CALC=$(echo "$(date --date="$TODAY_DATE 00:00:00" +%s) - $(date --date="$DATE2_TIME_DOWN_WAS" +%s)"|bc)
+        else
+            DATE2_DOWN_CALC="86400"
+        fi
+        if grep "$TODAY_DATE" "/tmp/.internet down.txt"
+        then
+            DATE2_DOWN_CALC="0"
+        fi
+    else
+        DATE2_DOWN_CALC="0"
+    fi
+    SECONDS2_CALC=$(echo "$SECONDS2 + $DATE2_START_CALC + $DATE2_END_CALC + $DATE2_DOWN_CALC"|bc) 
+    TIME2=$(printf '%dh:%dm:%ds\n' $(($SECONDS2_CALC/3600)) $(($SECONDS2_CALC%3600/60)) $(($SECONDS2_CALC%60)))
+}
+
+function daily-total-log {
+    echo "" >> "$LOG_SAVE_LOCATION"
+    echo "[Daily] Total internet downtime for $YESTERDAY_DAY_HUMAN = $TIME2" >> "$LOG_SAVE_LOCATION"
+    echo "dl$YESTERDAY_DATE" >> "$HIDDEN_LOG"
+}
+
+function daily-total-email {
+    if [ "$NOTIFICATION_TOTAL_DAILY" = "1" ]
+    then
+            EMAIL_CONTENTS_TOTAL2=$(echo "Total internet downtime for $YESTERDAY_DAY_HUMAN"
+                                    echo ""
+                                    echo "$TIME2"
+                                    echo ""
+                                   )
+        EMAIL_COMMAND_TOTAL2=$(echo "mailx -v -s '"$EMAIL_SUBJECT_DAILY"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL_DAILY")
+        echo "$EMAIL_CONTENTS_TOTAL2" | eval $EMAIL_COMMAND_TOTAL2
+        daily-total-email-log
+    else
+        if [ "$NOTIFICATION_TOTAL_DAILY" = "2" ]
+        then
+            EMAIL_CONTENTS_TOTAL2=$(echo "Total internet downtime for $YESTERDAY_DAY_HUMAN"
+                                    echo ""
+                                    echo "$TIME2"
+                                    echo ""
+                                   )
+            EMAIL_COMMAND_TOTAL2=$(echo "mailx -v -s '"$EMAIL_SUBJECT_DAILY"' -a '"$LOG_SAVE_LOCATION"' -S smtp-use-starttls -S ssl-verify=ignore -S smtp-auth=login -S smtp=$SMTP_SERVER:$SMTP_PORT -S smtp-auth-user=$FROM_EMAIL -S smtp-auth-password=$FROM_EMAIL_PASSWORD -S ssl-verify=ignore $TO_EMAIL_DAILY")
+            echo "$EMAIL_CONTENTS_TOTAL2" | eval $EMAIL_COMMAND_TOTAL2
+            daily-total-email-log
+        else
+            echo "daily email notification not enabled"
+        fi
+    fi
+}
+
+function daily-total-email-log {
+    echo "dn$YESTERDAY_DATE" >> "$HIDDEN_LOG"
+}
+
+# IF TOTAL
+
+function total-log {
+    get-dates
+    if grep "dl$YESTERDAY_DATE" "$HIDDEN_LOG"
+    then
+        echo ""
+    else
+        daily-total-calc
+        daily-total-log
+    fi
+    if grep "ml$LASTMONTH_MONTH//$LASTMONTH_YEAR" "$HIDDEN_LOG"
+    then
+        echo ""
+    else
+        monthly-total-calc
+        monthly-total-log
+    fi
+}
+
+function total-email {
+    get-dates
+    if grep "dn$YESTERDAY_DATE" "$HIDDEN_LOG"
+    then
+        echo ""
+    else
+        daily-total-calc
+        daily-total-email
+    fi
+    if grep "mn$LASTMONTH_MONTH//$LASTMONTH_YEAR" "$HIDDEN_LOG"
+    then
+        echo ""
+    else
+        monthly-total-calc
+        monthly-total-email
+    fi
+}
+
+function timedown-get {
+    DATE_TIME_LOST_UNIX_EPOCH=$(date +%s)
+    DATE_TIME_LOST_DATE_TIME0=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"%m/%d/%Y %T")
+    echo "$DATE_TIME_LOST_DATE_TIME0" > "/tmp/.internet down.txt"
+    DATE_TIME_LOST_HUMAN=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"$HUMAN_DATE_FORMAT")
+}
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# FIRST RUN
+
+if [ "$FIRST_RUN" = "1" ]
+then
+    get-dates
+    echo "-----------------------------------------------------------------------------------------------------------------------------" >> "$LOG_SAVE_LOCATION"
+    echo "" >> "$LOG_SAVE_LOCATION"
+    echo "Internet Downtime Logger v$VERSION by [null] aka akidwithnoname" >> "$LOG_SAVE_LOCATION"
+    echo "" >> "$LOG_SAVE_LOCATION"
+    echo "-----------------------------------------------------------------------------------------------------------------------------" >> "$LOG_SAVE_LOCATION"
+    sed -i 's|FIRST_RUN=".*"|FIRST_RUN="'"0"'"|g' "$CONFIG_FILE"
+fi
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# LOOP
+
+if [ -z "$SERVER3" ]
+then
+    SERVER3="$SERVER1"
+fi
+if [ -z "$SERVER4" ]
+then
+    SERVER3="$SERVER2"
+fi
+while true; do
+   echo "waiting for $SLEEP_TIME1 seconds"
+   sleep "$SLEEP_TIME1"
+   total-log
+   echo "attempting to ping server 1"
+   ping -c 1 "$SERVER1";
+   STATUS_1=$(echo $?)
+   echo "$STATUS_1"
+       if [ "$STATUS_1" -eq 0 ]
+       then
+       rm "/tmp/.internet down.txt"
+           echo "online"
+           total-email
+           continue 1
+       else
+           timedown-get
+           echo "no connection to server 1"
+           echo "waiting for $SLEEP_TIME2 seconds"
+           sleep "$SLEEP_TIME2"
+       fi
+   total-log
+   echo "attempting to ping server 2"
+   ping -c 1 "$SERVER2";
+   STATUS_2=$(echo $?);
+   echo "$STATUS_2"
+       if [ "$STATUS_2" -eq 0 ]
+       then
+           rm "/tmp/.internet down.txt"
+           echo "online"
+           total-email
+           continue 1
+       else
+           echo "no connection to server 2"
+           echo "waiting for $SLEEP_TIME2 seconds"
+           sleep "$SLEEP_TIME2"
+       fi
+   total-log
+   echo "attempting to ping server 3"
+   ping -c 1 "$SERVER3";
+   STATUS_3=$(echo $?);
+   echo "$STATUS_3"
+       if [ "$STATUS_3" -eq 0 ]
+       then
+           rm "/tmp/.internet down.txt"
+           echo "online"
+           total-email
+           continue 1
+       else
+           echo "no connection to server 3"
+           echo "waiting for $SLEEP_TIME2 seconds"
+           sleep "$SLEEP_TIME2"
+       fi
+   total-log
+   echo "attempting to ping server 4"
+   ping -c 1 "$SERVER4";
+   STATUS_4=$(echo $?);
+   echo "$STATUS_4"
+       if [ "$STATUS_4" -eq 0 ]
+       then
+           rm "/tmp/.internet down.txt"
+           echo "online"
+           total-email
+           continue 1
+       else
+           echo "no connection to server 4"
+           echo "offline"
+           while true; do
+               total-log
+               echo "waiting for $SLEEP_TIME_OFFLINE seconds"
+               sleep "$SLEEP_TIME_OFFLINE"
+               echo "offline, attempting to ping server 1"
+               ping -c 1 "$SERVER1";
+               STATUS_1=$(echo $?)
+               echo "$STATUS_1"
+                   if [ "$STATUS_1" -eq 0 ]
+                   then
+                       echo "online"
+                       rm "/tmp/.internet down.txt"
+                       instant-notification
+                       total-email
+                       break
+                   else
+                       echo "no connection to server 1"
+                       echo "waiting for $SLEEP_TIME_OFFLINE seconds"
+                       sleep "$SLEEP_TIME_OFFLINE"
+                   fi
+               total-log
+               echo "offline, attempting to ping server 2"
+               ping -c 1 "$SERVER2";
+               STATUS_2=$(echo $?);
+               echo "$STATUS_2"
+                   if [ "$STATUS_2" -eq 0 ]
+                   then
+                       echo "online"
+                       rm "/tmp/.internet down.txt"
+                       instant-notification
+                       total-email
+                       break
+                   else
+                       echo "no connection to server 2"
+                       echo "waiting for $SLEEP_TIME_OFFLINE seconds"
+                       sleep "$SLEEP_TIME_OFFLINE"
+                   fi
+               total-log
+               echo "offline, attempting to ping server 3"
+               ping -c 1 "$SERVER3";
+               STATUS_3=$(echo $?);
+               echo "$STATUS_3"
+                   if [ "$STATUS_3" -eq 0 ]
+                   then
+                       echo "online"
+                       rm "/tmp/.internet down.txt"
+                       instant-notification
+                       total-email
+                       break
+                   else
+                       echo "no connection to server 3"
+                       echo "waiting for $SLEEP_TIME_OFFLINE seconds"
+                       sleep "$SLEEP_TIME_OFFLINE"
+                   fi
+               total-log
+               echo "offline, attempting to ping server 4"
+               ping -c 1 "$SERVER4";
+               STATUS_4=$(echo $?);
+               echo "$STATUS_4"
+                   if [ "$STATUS_4" -eq 0 ]
+                   then
+                       echo "online"
+                       rm "/tmp/.internet down.txt"
+                       instant-notification
+                       total-email
+                       break
+                   else
+                       echo "no connection to server 4"
+                       continue 1
+                   fi
+           done
+       fi
+done
+
