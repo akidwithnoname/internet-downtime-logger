@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Internet Downtime Logger is a tool for logging internet downtime with optional email notifications.
-# Copyright (C) 2016 akidwithnoname
+# Copyright (C) 2016-2017 akidwithnoname
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>
 #
-# Internet Downtime Logger v2.3.3
+# Internet Downtime Logger v2.3.4
 # By [null] aka akidwithnoname
 # Website: https://null-bin.blogspot.com/2016/02/internet-downtime-logger.html
 # Twitter: https://twitter.com/akidwithnoname
@@ -24,11 +24,20 @@
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+# SET VERSION
+
+VERSION_PROGRAM="2.3"
+VERSION_PROGRAM_LONG="2.3.4"
+
 # CLEAR THE WINDOW
 
 clear
 
-# CONFIG FILE
+# SWITCH TO HOME DIRECTORY 
+
+cd
+
+# SET CONFIG FILE
 
 CONFIG_FILE="./.config/internet-downtime-logger/internet-downtime-logger.conf"
 
@@ -47,27 +56,7 @@ fi
 
 function internet-downtime-logger-config {
 
-if [ -e "$CONFIG_FILE" ]
-	then
-		echo "using existing config file"
-	else
-		echo "creating new config file"
-		mkdir "./.config/internet-downtime-logger"
-		cp -r "/usr/share/internet-downtime-logger/internet-downtime-logger.conf" "$CONFIG_FILE"
-		if [ -e "$CONFIG_FILE" ]
-		then 
-			echo "config file created succesfully"
-		else
-			echo "unable to create config file"
-			exit 0
-		fi
-fi
-
-echo "reading config file"
-source "$CONFIG_FILE"
-
-
-# INITIAL SETUP {
+# INITIAL SETUP 
 
 	sed -n "2,24p" "/usr/bin/internet-downtime-logger"
 	echo "This is the initial setup process for Internet Downtime Logger."
@@ -482,50 +471,40 @@ exit 0
 
 }
 
-
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# START PROGRAM OPTIONS
-
-case $1  in
-
-	config)
-		internet-downtime-logger-config
-		;;
-
-	*)
-
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # CHECK CONFIG FILE
 
-cd
+echo "checking for user $(whoami)'s config file"
 if [ -e "$CONFIG_FILE" ]
 then
-	echo "using existing config file"
+	echo "config file found, using existing config file"
 else
-	echo "creating new config file"
+	echo "no config file found for user $(whoami), creating new config file"
 	mkdir "./.config/internet-downtime-logger"
 	cp -r "/usr/share/internet-downtime-logger/internet-downtime-logger.conf" "$CONFIG_FILE"
 	if [ -e "$CONFIG_FILE" ]
 	then
 		echo "config file created succesfully"
-		echo "starting internet-downtime-logger-config"
+		echo "starting internet-downtime-logger config utility"
 		internet-downtime-logger-config
 	else
-		echo "unable to create config file, exiting"
+		echo "unable to create config file for user $(whoami), exiting"
 		exit 0
 	fi
 fi
 source "$CONFIG_FILE"
-if [ "$VERSION" = "2.3" ]
+echo "checking if log file is compatible with this version of internet-downtime-logger"
+echo "internet-downtime-logger version = $VERSION_PROGRAM_LONG"
+echo "config file version              = $VERSION"
+if [ "$VERSION" = $VERSION_PROGRAM ]
 then
 	echo "log file is compatible"
 else
-	echo "please upgrade config file to v2.3!"
+	echo "please upgrade config file to v$VERSION_PROGRAM!"
 	echo "you may do this by deleting or renaming the existing config file located at "$CONFIG_FILE""
 	echo ""
-	echo "would you like to overwrite your existing config file with a blank v2.3 one now?"
+	echo "would you like to overwrite your existing config file with a blank v$VERSION_PROGRAM one now?"
 	echo "( 1 = Yes | 0 = No )"
 	read OVERWRITE_CONFIG
 	if [ "$OVERWRITE_CONFIG" = "1" ]
@@ -554,7 +533,20 @@ source "$CONFIG_FILE"
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# FUNCTIONS
+# START PROGRAM OPTIONS
+
+case $1  in
+
+	config)
+		internet-downtime-logger-config
+		;;
+
+	*)
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# FUNCTIONS 
 
 # GET DATES
 
@@ -577,6 +569,14 @@ function get-dates {
 	PREVMONTH_YEAR=$(date --date="-$DAYSTOPREVMONTH day" +%Y)
 }
 
+# GET TIME CONNECTION LOST
+
+function timedown-get {
+	DATE_TIME_LOST_UNIX_EPOCH=$(date +%s)
+	DATE_TIME_LOST_DATE_TIME0=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"%m/%d/%Y %T")
+	echo "$DATE_TIME_LOST_DATE_TIME0" > "/tmp/.internet down.txt"
+	DATE_TIME_LOST_HUMAN=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"$HUMAN_DATE_FORMAT")
+}
 
 # INSTANT NOTIFICATION
 
@@ -824,12 +824,6 @@ function total-email {
 	fi
 }
 
-function timedown-get {
-	DATE_TIME_LOST_UNIX_EPOCH=$(date +%s)
-	DATE_TIME_LOST_DATE_TIME0=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"%m/%d/%Y %T")
-	echo "$DATE_TIME_LOST_DATE_TIME0" > "/tmp/.internet down.txt"
-	DATE_TIME_LOST_HUMAN=$(date -d @"$DATE_TIME_LOST_UNIX_EPOCH" +"$HUMAN_DATE_FORMAT")
-}
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -848,7 +842,9 @@ fi
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# LOOP
+echo "starting internet-downtime-loger"
+
+# PROGRAM LOOP
 
 if [ -z "$SERVER3" ]
 then
@@ -907,7 +903,7 @@ while true; do
 			echo "Server 3 : ..."
 			echo "Server 4 : ..."
 			#
-			total-email > /dev/null
+			total-email
 			continue 1
 		else
 			clear
@@ -937,7 +933,7 @@ while true; do
 			echo "Server 3 : Active"
 			echo "Server 4 : ..."
 			#
-			total-email > /dev/null
+			total-email
 			continue 1
        else 
 			clear
@@ -1113,6 +1109,6 @@ done
 
 # END PROGRAM OPTIONS
 
-		;;
+;;
 
 esac
