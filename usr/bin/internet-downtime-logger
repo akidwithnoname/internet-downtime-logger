@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>
 #
-# Internet Downtime Logger v2.3.4
+# Internet Downtime Logger v2.3.4.1
 # By [null] aka akidwithnoname
 # Website: https://null-bin.blogspot.com/2016/02/internet-downtime-logger.html
 # Twitter: https://twitter.com/akidwithnoname
@@ -27,7 +27,7 @@
 # SET VERSION
 
 VERSION_PROGRAM="2.3"
-VERSION_PROGRAM_LONG="2.3.4"
+VERSION_PROGRAM_LONG="2.3.4.1"
 
 # CLEAR THE WINDOW
 
@@ -842,9 +842,22 @@ fi
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-echo "starting internet-downtime-loger"
+# CHECK DEPENDS
 
-# PROGRAM LOOP
+echo "checking if package 'heirloom-mailx' is installed"
+PACKAGE_MAIL="heirloom-mailx"
+QUERY_MAIL=$(dpkg-query -s $PACKAGE_MAIL 2>/dev/null |  grep -c "ok installed")
+if [ $QUERY_MAIL = "1" ]
+then
+	echo "$PACKAGE_MAIL is installed"
+else
+	echo "$PACKAGE_MAIL not installed, email notification functionality disabled"
+	NOTIFICATION="0"
+	NOTIFICATION_TOTAL_MONTHLY="0"
+	NOTIFICATION_TOTAL_DAILY="0"
+fi
+
+# ENSURE 4 SERVERS
 
 if [ -z "$SERVER3" ]
 then
@@ -854,6 +867,10 @@ if [ -z "$SERVER4" ]
 then
 	SERVER3="$SERVER2"
 fi
+echo "starting internet-downtime-logger"
+
+# PROGRAM LOOP
+
 while true; do
 	sleep "$SLEEP_TIME1"
 	total-log > /dev/null
