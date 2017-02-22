@@ -3,4 +3,4 @@ Internet Downtime Logger is a terminal application that logs time spent without 
 
 Current Version = 2.3.4
 
-Current Build Version (.deb) = 2.3.3
+Current Build Version (.deb) = 2.3.4
